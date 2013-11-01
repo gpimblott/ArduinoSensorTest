@@ -19,10 +19,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include <Wire.h>
 #include "L3G4200D.h"
 #include "HMC5883L.h"
+#include "ADXL345.h"
 
 
 #define COMPASS
 #define GYRO
+#define ACCEL
+
+#ifdef ACCEL
+ADXL345 accel;
+#endif
 
 // Store our compass as a variable.
 #ifdef COMPASS
@@ -35,64 +41,101 @@ L3G4200D gyro;
 
 
 /**
- * Setup the various sensors
- **/
+* Setup the various sensors
+**/
 void setup() {
 	Serial.begin(9600);
 	
-#ifdef GYRO
+	#ifdef GYRO
 	if( setupL3G4200D() ) {
 		Serial.println("L3G4200D Gyro setup ok");
-	} else {
+		} else {
 		Serial.println("L3G4200D Gyro setup FAILED");
 	}
-#endif
+	#endif
 	
-#ifdef COMPASS
+	#ifdef COMPASS
 	if( setupHMC5883L() ) {
 		Serial.println("HMC5883L Compass setup ok");
-	} else {
+		} else {
 		Serial.println("HMC5883L Compass setup FAILED");
 	}
-#endif
+	#endif
+	
+	#ifdef ACCEL
+	setupADXL345();
+	#endif
 }
 
 
 
 /**
- * Main execution loop
- *
- * Keep reading the sensors and display the output
- *
- **/
+* Main execution loop
+*
+* Keep reading the sensors and display the output
+*
+**/
 void loop() {
 	
-#ifdef GYRO
+	#ifdef GYRO
 	// Digital Gyro
 	readL3G4200D();
-#endif
+	#endif
 
-#ifdef COMPASS	
+	#ifdef COMPASS
 	// Digital Compass
 	readHMC5883L();
-#endif
+	#endif
+
+	#ifdef ACCEL
+	// Accelerometer
+	readADXL345();
+	#endif
 
 	// Wait for a short time
 	delay(100);
 }
 
+
+#ifdef ACCEL
+/**
+* setup the ADXL345 accelerometer
+*/
+void setupADXL345() {
+	accel.powerOn();
+}
+
+/**
+*
+*/
+void readADXL345() {
+	int x, y, z, i;
+	double xyz[3], gains[3], gains_orig[3];
+	
+	accel.getAxisGains(gains_orig);
+	Serial.println("ADXL 345: gains_orig[]:");
+	for(i = 0; i < 3; i++){
+		Serial.print(gains_orig[i], 6);
+		Serial.print(" ");
+	}
+	Serial.println("");
+}
+
+#endif
+
+
 #ifdef GYRO
 /**
- * Setup the L3G4200D digital gyroscope
- **/
+* Setup the L3G4200D digital gyroscope
+**/
 boolean setupL3G4200D() {
 	return gyro.setup( gyro.RANGE_250DPS);
 }
 
 /**
- * Rad the gyro and output the result
- *
- **/
+* Rad the gyro and output the result
+*
+**/
 void readL3G4200D() {
 	gyro.read();
 
@@ -109,8 +152,8 @@ void readL3G4200D() {
 
 #ifdef COMPASS
 /**
- * Setup the HMC5883L digital compass
- **/
+* Setup the HMC5883L digital compass
+**/
 boolean setupHMC5883L() {
 	boolean result = true;
 	int error = 0;
@@ -132,8 +175,8 @@ boolean setupHMC5883L() {
 }
 
 /**
- * Read the digital compass and ouput the results
- **/
+* Read the digital compass and ouput the results
+**/
 void readHMC5883L() {
 	
 	// Retrive the raw values from the compass (not scaled).

@@ -228,6 +228,12 @@
     <Folder Include="Visual Micro\" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="ADXL345.cpp">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="ADXL345.h">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="HMC5883L.cpp">
       <SubType>compile</SubType>
     </Compile>
@@ -238,6 +244,12 @@
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="L3G4200D.h">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="SensorUtils.cpp">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="SensorUtils.h">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="Visual Micro\.IMU.vsarduino.h">
