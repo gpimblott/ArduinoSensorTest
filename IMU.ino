@@ -1,36 +1,99 @@
 
+/*
+Arduino Test harness for sensors.
+Copyright (C) 2013 G.Pimblott
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the version 3 GNU General Public License as
+published by the Free Software Foundation.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+GNU General Public License for more details.
+
+You should have received a copy of the GNU General Public License
+along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+*/
 #include <Wire.h>
 #include "L3G4200D.h"
 #include "HMC5883L.h"
 
+
+#define COMPASS
+#define GYRO
+
 // Store our compass as a variable.
+#ifdef COMPASS
 HMC5883L compass;
+#endif
+
+#ifdef GYRO
 L3G4200D gyro;
+#endif
 
-int error = 0;
 
-
+/**
+ * Setup the various sensors
+ **/
 void setup() {
 	Serial.begin(9600);
 	
-	if( !gyro.setup( gyro.RANGE_250DPS) ) {
-		Serial.println("Failed to setup connection to gyro");
-		while(1);
+#ifdef GYRO
+	if( setupL3G4200D() ) {
+		Serial.println("L3G4200D Gyro setup ok");
+	} else {
+		Serial.println("L3G4200D Gyro setup FAILED");
 	}
+#endif
 	
-	compass = HMC5883L(); // Construct a new HMC5883 compass.
-	
-	Serial.println("Setting scale to +/- 1.3 Ga");
-	error = compass.SetScale(1.3); // Set the scale of the compass.
-	
-	Serial.println("Setting measurement mode to continous.");
-	error = compass.SetMeasurementMode(Measurement_Continuous); // Set the measurement mode to Continuous
-	
-	if(error != 0) // If there is an error, print it out.
-	Serial.println(compass.GetErrorText(error));
+#ifdef COMPASS
+	if( setupHMC5883L() ) {
+		Serial.println("HMC5883L Compass setup ok");
+	} else {
+		Serial.println("HMC5883L Compass setup FAILED");
+	}
+#endif
 }
 
+
+
+/**
+ * Main execution loop
+ *
+ * Keep reading the sensors and display the output
+ *
+ **/
 void loop() {
+	
+#ifdef GYRO
+	// Digital Gyro
+	readL3G4200D();
+#endif
+
+#ifdef COMPASS	
+	// Digital Compass
+	readHMC5883L();
+#endif
+
+	// Wait for a short time
+	delay(100);
+}
+
+#ifdef GYRO
+/**
+ * Setup the L3G4200D digital gyroscope
+ **/
+boolean setupL3G4200D() {
+	return gyro.setup( gyro.RANGE_250DPS);
+}
+
+/**
+ * Rad the gyro and output the result
+ *
+ **/
+void readL3G4200D() {
 	gyro.read();
 
 	Serial.print("G ");
@@ -40,8 +103,38 @@ void loop() {
 	Serial.print((int)gyro.g.y);
 	Serial.print(" Z: ");
 	Serial.println((int)gyro.g.z);
+}
+#endif
 
+
+#ifdef COMPASS
+/**
+ * Setup the HMC5883L digital compass
+ **/
+boolean setupHMC5883L() {
+	boolean result = true;
+	int error = 0;
+	compass = HMC5883L(); // Construct a new HMC5883 compass.
 	
+	Serial.println("Setting scale to +/- 1.3 Ga");
+	error = compass.SetScale(1.3f); // Set the scale of the compass.
+	
+	Serial.println("Setting measurement mode to continous.");
+	error = compass.SetMeasurementMode(Measurement_Continuous); // Set the measurement mode to Continuous
+	
+	// If there is an error, print it out.
+	if(error != 0) {
+		Serial.println(compass.GetErrorText(error));
+		result = false;
+	}
+	
+	return result;
+}
+
+/**
+ * Read the digital compass and ouput the results
+ **/
+void readHMC5883L() {
 	
 	// Retrive the raw values from the compass (not scaled).
 	MagnetometerRaw raw = compass.ReadRawAxis();
@@ -62,12 +155,14 @@ void loop() {
 	heading += declinationAngle;
 	
 	// Correct for when signs are reversed.
-	if(heading < 0)
-	heading += 2*PI;
+	if(heading < 0) {
+		heading += 2*PI;
+	}
 	
 	// Check for wrap due to addition of declination.
-	if(heading > 2*PI)
-	heading -= 2*PI;
+	if(heading > 2*PI) {
+		heading -= 2*PI;
+	}
 	
 	// Convert radians to degrees for readability.
 	float headingDegrees = heading * 180/M_PI;
@@ -92,7 +187,6 @@ void loop() {
 	Serial.print(" Radians   \t");
 	Serial.print(headingDegrees);
 	Serial.println(" Degrees   \t");
-	
-	delay(100);
 }
 
+#endif
