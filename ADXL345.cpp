@@ -12,7 +12,7 @@
  * GNU License V2 for more details.                                        *
  *                                                                         *
  ***************************************************************************/
-#include "WProgram.h"
+#include "Arduino.h"
 #include "ADXL345.h"
 #include <Wire.h>
 
@@ -40,6 +40,7 @@ void ADXL345::powerOn() {
 void ADXL345::readAccel(int *xyz){
   readAccel(xyz, xyz + 1, xyz + 2);
 }
+
 void ADXL345::readAccel(int *x, int *y, int *z) {
   readFrom(ADXL345_DATAX0, TO_READ, _buff); //read the acceleration data from the ADXL345
 

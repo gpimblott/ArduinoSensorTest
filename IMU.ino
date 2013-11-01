@@ -22,8 +22,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "ADXL345.h"
 
 
-#define COMPASS
-#define GYRO
+//#define COMPASS
+//#define GYRO
 #define ACCEL
 
 #ifdef ACCEL
@@ -106,16 +106,25 @@ void setupADXL345() {
 }
 
 /**
-*
+* Read some of the values from the accelerometer
 */
 void readADXL345() {
 	int x, y, z, i;
 	double xyz[3], gains[3], gains_orig[3];
 	
-	accel.getAxisGains(gains_orig);
-	Serial.println("ADXL 345: gains_orig[]:");
-	for(i = 0; i < 3; i++){
-		Serial.print(gains_orig[i], 6);
+	accel.readAccel(&x, &y, &z);
+	Serial.print("XYZ COUNTS: ");
+	Serial.print(x, DEC);
+	Serial.print(" ");
+	Serial.print(y, DEC);
+	Serial.print(" ");
+	Serial.print(z, DEC);
+	Serial.println("");
+
+	accel.get_Gxyz(xyz);
+	Serial.print("XYZ Gs: ");
+	for(i = 0; i<3; i++){
+		Serial.print(xyz[i], DEC);
 		Serial.print(" ");
 	}
 	Serial.println("");
