@@ -217,6 +217,12 @@
     <None Include="IMU.ino">
       <SubType>compile</SubType>
     </None>
+    <None Include="LICENSE">
+      <SubType>compile</SubType>
+    </None>
+    <None Include="README.md">
+      <SubType>compile</SubType>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <Folder Include="Visual Micro\" />
