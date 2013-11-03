@@ -25,10 +25,15 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
 #include <inttypes.h>
 #include <Wire.h>
+#include "Sensor.h"
 
 #define HMC5883L_Address 0x1E
+#define HMC5883L_DEV_ID 0x483433
+
 #define ConfigurationRegisterA 0x00
 #define ConfigurationRegisterB 0x01
+#define IdenificationRegisterA 0x0A
+
 #define ModeRegister 0x02
 #define DataRegisterBegin 0x03
 
@@ -53,10 +58,14 @@ struct MagnetometerRaw
 	int ZAxis;
 };
 
-class HMC5883L
+class HMC5883L : public Sensor
 {
 	public:
-	  HMC5883L();
+	  HMC5883L() : Sensor(HMC5883L_Address , 1000084) {
+		m_Scale = 1;
+		}  ;
+		
+	  bool begin();
 
 	  MagnetometerRaw ReadRawAxis();
 	  MagnetometerScaled ReadScaledAxis();
@@ -65,6 +74,9 @@ class HMC5883L
 	  int SetScale(float gauss);
 
 	  char* GetErrorText(int errorCode);
+	  
+	  void  getEvent(sensors_event_t*);
+	  void  getSensor(sensor_t*);
 
 	protected:
 	  void Write(int address, int byte);

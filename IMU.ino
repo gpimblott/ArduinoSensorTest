@@ -26,14 +26,14 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define COMPASS
 //#define GYRO
 //#define ACCEL
-//#define PRESSURE
+#define PRESSURE
 
 #ifdef ACCEL
 ADXL345 accel;
 #endif
 
 #ifdef COMPASS
-HMC5883L compass;
+HMC5883L compass = HMC5883L();
 #endif
 
 #ifdef GYRO
@@ -41,27 +41,95 @@ L3G4200D gyro;
 #endif
 
 #ifdef PRESSURE
-BMP085 pressure;
+BMP085 bmp = BMP085(10085);
 #endif
 
+void displaySensorDetails(sensor_t sensor)
+{
+	Serial.println("------------------------------------");
+	Serial.print ("Sensor: "); Serial.println(sensor.name);
+	Serial.print ("Driver Ver: "); Serial.println(sensor.version);
+	Serial.print ("Unique ID: "); Serial.println(sensor.sensor_id);
+	Serial.print ("Max Value: "); Serial.println(sensor.max_value);
+	Serial.print ("Min Value: "); Serial.println(sensor.min_value);
+	Serial.print ("Resolution: "); Serial.println(sensor.resolution);
+	Serial.println("------------------------------------");
+	Serial.println("");
+	delay(500);
+}
 
 /**
- * Setup the BMP085 pressure sensor
- **/
+* Setup the BMP085 pressure sensor
+**/
 #ifdef PRESSURE
 
 void setupBMP085() {
 	Serial.println("Initialising BMP085");
-	//pressure.initialise();
+	if(!bmp.begin())
+	{
+		/* There was a problem detecting the BMP085 ... check your connections */
+		Serial.print("Ooops, no BMP085 detected ... Check your wiring or I2C ADDR!");
+		while(1);
+	}
+	
+	sensor_t sensor;
+	bmp.getSensor(&sensor);
+	
+	displaySensorDetails(sensor);
 }
 
 void readBMP085() {
 	Serial.println("Reading BMP085");
-	//pressure.measureBaro();
-    
-    Serial.print("altitude : ");
-    //Serial.print(pressure.getBaroAltitude());
-    Serial.println();
+	/* Get a new sensor event */
+	sensors_event_t event;
+	bmp.getEvent(&event);
+	
+	/* Display the results (barometric pressure is measure in hPa) */
+	if (event.pressure)
+	{
+		/* Display atmospheric pressue in hPa */
+		Serial.print("Pressure: ");
+		Serial.print(event.pressure);
+		Serial.println(" hPa");
+		
+		/* Calculating altitude with reasonable accuracy requires pressure *
+		* sea level pressure for your position at the moment the data is *
+		* converted, as well as the ambient temperature in degress *
+		* celcius. If you don't have these values, a 'generic' value of *
+		* 1013.25 hPa can be used (defined as SENSORS_PRESSURE_SEALEVELHPA *
+		* in sensors.h), but this isn't ideal and will give variable *
+		* results from one day to the next. *
+		* *
+		* You can usually find the current SLP value by looking at weather *
+		* websites or from environmental information centers near any major *
+		* airport. *
+		* *
+		* For example, for Paris, France you can check the current mean *
+		* pressure and sea level at: http://bit.ly/16Au8ol */
+		
+		/* First we get the current temperature from the BMP085 */
+		float temperature;
+		bmp.getTemperature(&temperature);
+		Serial.print("Temperature: ");
+		Serial.print(temperature);
+		Serial.println(" C");
+
+		/* Then convert the atmospheric pressure, SLP and temp to altitude */
+		/* Update this next line with the current SLP for better results */
+		float seaLevelPressure = SENSORS_PRESSURE_SEALEVELHPA;
+		Serial.print("Altitude: ");
+		Serial.print(bmp.pressureToAltitude(seaLevelPressure,
+		event.pressure,
+		temperature));
+		Serial.println(" m");
+		Serial.println("");
+	}
+	else
+	{
+		Serial.println("Sensor error");
+	}
+	
+	
 }
 
 #endif
@@ -129,18 +197,24 @@ void readL3G4200D() {
 
 
 #ifdef COMPASS
-/**
-* Setup the HMC5883L digital compass
-**/
+
+/**********************************************/
+/* Setup the compass */
+/**********************************************/
 boolean setupHMC5883L() {
 	boolean result = true;
 	int error = 0;
-	compass = HMC5883L(); // Construct a new HMC5883 compass.
 	
-	Serial.println("Setting scale to +/- 1.3 Ga");
+	// Start the sensor
+	compass.begin();
+	
+	// Display the sensor
+	sensor_t sensor;
+	compass.getSensor(&sensor);
+	displaySensorDetails(sensor);
+	
+	// Set some defaults
 	error = compass.SetScale(1.3f); // Set the scale of the compass.
-	
-	Serial.println("Setting measurement mode to continous.");
 	error = compass.SetMeasurementMode(Measurement_Continuous); // Set the measurement mode to Continuous
 	
 	// If there is an error, print it out.
@@ -157,57 +231,42 @@ boolean setupHMC5883L() {
 **/
 void readHMC5883L() {
 	
-	// Retrive the raw values from the compass (not scaled).
-	MagnetometerRaw raw = compass.ReadRawAxis();
-	// Retrived the scaled values from the compass (scaled to the configured scale).
-	MagnetometerScaled scaled = compass.ReadScaledAxis();
+	/* Get a new sensor event */
+	sensors_event_t event;
+	compass.getEvent(&event);
 	
-	// Values are accessed like so:
-	int MilliGauss_OnThe_XAxis = scaled.XAxis;// (or YAxis, or ZAxis)
+	/* Display the results (barometric pressure is measure in hPa) */
+	if (event.type == SENSOR_TYPE_MAGNETIC_FIELD)
+	{
+		// Calculate heading when the magnetometer is level, then correct for signs of axis.
+		float heading = atan2(event.orientation.y, event.orientation.x);
+		
+		// Once you have your heading, you must then add your 'Declination Angle', which is the 'Error' of the magnetic field in your location.
+		// Find yours here: http://www.magnetic-declination.com/
+		// Mine is: 2? 37' W, which is 2.617 Degrees, or (which we need) 0.0456752665 radians, I will use 0.0457
+		// If you cannot find your Declination, comment out these two lines, your compass will be slightly off.
+		float declinationAngle = 0.0457;
+		heading += declinationAngle;
+		
+		// Correct for when signs are reversed.
+		if(heading < 0) {
+			heading += 2*PI;
+		}
+		
+		// Check for wrap due to addition of declination.
+		if(heading > 2*PI) {
+			heading -= 2*PI;
+		}
+		
+		// Convert radians to degrees for readability.
+		float headingDegrees = heading * 180/M_PI;
 
-	// Calculate heading when the magnetometer is level, then correct for signs of axis.
-	float heading = atan2(scaled.YAxis, scaled.XAxis);
-	
-	// Once you have your heading, you must then add your 'Declination Angle', which is the 'Error' of the magnetic field in your location.
-	// Find yours here: http://www.magnetic-declination.com/
-	// Mine is: 2? 37' W, which is 2.617 Degrees, or (which we need) 0.0456752665 radians, I will use 0.0457
-	// If you cannot find your Declination, comment out these two lines, your compass will be slightly off.
-	float declinationAngle = 0.0457;
-	heading += declinationAngle;
-	
-	// Correct for when signs are reversed.
-	if(heading < 0) {
-		heading += 2*PI;
+		Serial.print("   \tHeading:\t");
+		Serial.print(heading);
+		Serial.print(" Radians   \t");
+		Serial.print(headingDegrees);
+		Serial.println(" Degrees   \t");
 	}
-	
-	// Check for wrap due to addition of declination.
-	if(heading > 2*PI) {
-		heading -= 2*PI;
-	}
-	
-	// Convert radians to degrees for readability.
-	float headingDegrees = heading * 180/M_PI;
-
-	// Output the data via the serial port.
-	Serial.print("Raw:\t");
-	Serial.print(raw.XAxis);
-	Serial.print("   ");
-	Serial.print(raw.YAxis);
-	Serial.print("   ");
-	Serial.print(raw.ZAxis);
-	Serial.print("   \tScaled:\t");
-	
-	Serial.print(scaled.XAxis);
-	Serial.print("   ");
-	Serial.print(scaled.YAxis);
-	Serial.print("   ");
-	Serial.print(scaled.ZAxis);
-
-	Serial.print("   \tHeading:\t");
-	Serial.print(heading);
-	Serial.print(" Radians   \t");
-	Serial.print(headingDegrees);
-	Serial.println(" Degrees   \t");
 }
 
 #endif

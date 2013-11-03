@@ -252,10 +252,10 @@
     <Compile Include="L3G4200D.h">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="SensorUtils.cpp">
+    <Compile Include="Sensor.cpp">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="SensorUtils.h">
+    <Compile Include="Sensor.h">
       <SubType>compile</SubType>
     </Compile>
     <Compile Include="Visual Micro\.IMU.vsarduino.h">

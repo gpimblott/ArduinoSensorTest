@@ -1,211 +1,316 @@
-/*
-BMP085.cpp - Bosch BMP085 Arduino Library.
-Copyright (C) 2013 G.Pimblott
+/***************************************************************************
+  This is a library for the BMP085 pressure sensor
 
-This program is free software: you can redistribute it and/or modify
-it under the terms of the version 3 GNU General Public License as
-published by the Free Software Foundation.
+  Designed specifically to work with the Adafruit BMP085 Breakout
 
-This program is distributed in the hope that it will be useful,
-but WITHOUT ANY WARRANTY; without even the implied warranty of
-MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-GNU General Public License for more details.
+  These displays use I2C to communicate, 2 pins are required to interface.
 
-You should have received a copy of the GNU General Public License
-along with this program.  If not, see <http://www.gnu.org/licenses/>.
+  Adafruit invests time and resources providing this open source code,
+  please support Adafruit andopen-source hardware by purchasing products
+  from Adafruit!
 
-*/
-#include <Arduino.h>
+  Written by Kevin Townsend for Adafruit Industries.  
+  BSD license, all text above must be included in any redistribution
+  
+  Modifed by G.Pimblott to work with a more complete generic base class
+ ***************************************************************************/
+#include "Arduino.h"
+
 #include <Wire.h>
+#include <math.h>
+#include <limits.h>
 
-#include "SensorUtils.h"
 #include "BMP085.h"
 
+static bmp085_calib_data _bmp085_coeffs;   // Last read accelerometer data will be available here
+static uint8_t           _bmp085Mode;
 
-/************************************************************************/
-/* Constructor                                                          */
-/************************************************************************/
-BMP085::BMP085() {
-	
-	overSamplingSetting = OVER_SAMPLING_SETTING;
-	ac1 = 0, ac2 = 0, ac3 = 0;
-	ac4 = 0, ac5 = 0, ac6 = 0;
-	b1 = 0, b2 = 0, mb = 0, mc = 0, md = 0;
-	rawPressure = 0, rawTemperature = 0;
-	pressureCount = 0;
-	pressureFactor = 1/5.255;
-	isReadPressure = false;
-	rawPressureSum = 0;
-	rawPressureSumCount = 0;
-	
-	baroAltitude      = 0.0;
-	baroRawAltitude   = 0.0;
-	baroGroundAltitude = 0.0;
-	baroSmoothFactor   = 0.02;
-}
+#define BMP085_USE_DATASHEET_VALS (0) /* Set to 1 for sanity check */
 
-void BMP085::requestRawPressure() {
-	updateI2C(BMP085_I2C_ADDRESS, 0xF4, 0x34+(overSamplingSetting<<6));
-}
+/***************************************************************************
+ PRIVATE FUNCTIONS
+ ***************************************************************************/
 
-long BMP085::readRawPressure() {
 
-	writeI2C(BMP085_I2C_ADDRESS, 0xF6);
-	Wire.requestFrom(BMP085_I2C_ADDRESS, 3); // request three bytes
-	return (((unsigned long)Wire.read() << 16) | ((unsigned long)Wire.read() << 8) | ((unsigned long)Wire.read())) >> (8-overSamplingSetting);
-}
-
-void BMP085::requestRawTemperature() {
-	updateI2C(BMP085_I2C_ADDRESS, 0xF4, 0x2E);
-}
-
-unsigned int BMP085::readRawTemperature() {
-	writeI2C(BMP085_I2C_ADDRESS, 0xF6);
-	return readWordAndWaitI2C(BMP085_I2C_ADDRESS);
-}
-
-// ***********************************************************
-// Define all the virtual functions declared in the main class
-// ***********************************************************
-void BMP085::initialise() {
-
-	// oversampling setting
-	// 0 = ultra low power
-	// 1 = standard
-	// 2 = high
-	// 3 = ultra high resolution
-	overSamplingSetting = OVER_SAMPLING_SETTING;
-	pressure = 0;
-	baroGroundAltitude = 0;
-	pressureFactor = 1/5.255;
-	
-	if (readWhoI2C(BMP085_I2C_ADDRESS) == 0) {
-		deviceState = false;
-	}
-	
-	writeI2C(BMP085_I2C_ADDRESS, 0xAA);
-	Wire.requestFrom(BMP085_I2C_ADDRESS, 22);
-	ac1 = readShortI2C();
-	ac2 = readShortI2C();
-	ac3 = readShortI2C();
-	ac4 = readWordI2C();
-	ac5 = readWordI2C();
-	ac6 = readWordI2C();
-	b1 = readShortI2C();
-	b2 = readShortI2C();
-	mb = readShortI2C();
-	mc = readShortI2C();
-	md = readShortI2C();
-	requestRawTemperature(); // setup up next measure() for temperature
-	isReadPressure = false;
-	pressureCount = 0;
-	measureBaro();
-	delay(5); // delay for temperature
-	measureBaro();
-	delay(10); // delay for pressure
-	measureGroundBaro();
-	// check if measured ground altitude is valid
-	while (abs(rawAltitude - baroGroundAltitude) > 10) {
-		delay(26);
-		measureGroundBaro();
-	}
-	baroAltitude = baroGroundAltitude;
-}
-
-void BMP085::measureBaro() {
-	measureBaroSum();
-	evaluateBaroAltitude();
-}
-
-void BMP085::measureBaroSum() {
-	// switch between pressure and tempature measurements
-	// each loop, since it's slow to measure pressure
-	if (isReadPressure) {
-		rawPressureSum += readRawPressure();
-		rawPressureSumCount++;
-		if (pressureCount == 4) {
-			requestRawTemperature();
-			pressureCount = 0;
-			isReadPressure = false;
-		}
-		else {
-			requestRawPressure();
-		}
-		pressureCount++;
-	}
-	else { // select must equal TEMPERATURE
-		rawTemperature = (long)readRawTemperature();
-		requestRawPressure();
-		isReadPressure = true;
-	}
-}
-
-void BMP085::evaluateBaroAltitude() {
-	long x1, x2, x3, b3, b5, b6, p;
-	unsigned long b4, b7;
-	int32_t tmp;
-
-	//calculate true temperature
-	x1 = ((long)rawTemperature - ac6) * ac5 >> 15;
-	x2 = ((long) mc << 11) / (x1 + md);
-	b5 = x1 + x2;
-
-	if (rawPressureSumCount == 0) { // may occur at init time that no pressure have been read yet!
-		return;
-	}
-	rawPressure = rawPressureSum / rawPressureSumCount;
-	rawPressureSum = 0.0;
-	rawPressureSumCount = 0;
-	
-	//calculate true pressure
-	b6 = b5 - 4000;
-	x1 = (b2 * (b6 * b6 >> 12)) >> 11;
-	x2 = ac2 * b6 >> 11;
-	x3 = x1 + x2;
-	
-	// Real Bosch formula - b3 = ((((int32_t)ac1 * 4 + x3) << overSamplingSetting) + 2) >> 2;
-	// The version below is the same, but takes less program space
-	tmp = ac1;
-	tmp = (tmp * 4 + x3) << overSamplingSetting;
-	b3 = (tmp + 2) >> 2;
-	
-	x1 = ac3 * b6 >> 13;
-	x2 = (b1 * (b6 * b6 >> 12)) >> 16;
-	x3 = ((x1 + x2) + 2) >> 2;
-	b4 = (ac4 * (uint32_t) (x3 + 32768)) >> 15;
-	b7 = ((uint32_t) rawPressure - b3) * (50000 >> overSamplingSetting);
-	p = b7 < 0x80000000 ? (b7 << 1) / b4 : (b7 / b4) << 1;
-	
-	x1 = (p >> 8) * (p >> 8);
-	x1 = (x1 * 3038) >> 16;
-	x2 = (-7357 * p) >> 16;
-	pressure = (p + ((x1 + x2 + 3791) >> 4));
-	
-	rawAltitude = 44330 * (1 - pow(pressure/101325.0, pressureFactor)); // returns absolute baroAltitude in meters
-	baroAltitude = filterSmooth(rawAltitude, baroAltitude, baroSmoothFactor);
-}
-
-const float BMP085::getBaroAltitude() {
-	return baroAltitude - baroGroundAltitude;
-}
-
-void BMP085::measureGroundBaro() {
-	// measure initial ground pressure (multiple samples)
-	float altSum = 0.0;
-	for (int i=0; i < 25; i++) {
-		measureBaro();
-		altSum += baroRawAltitude;
-		delay(12);
-	}
-	baroGroundAltitude = altSum / 25;
-}
-
-// Low pass filter, kept as regular C function for speed
-float BMP085::filterSmooth(float currentData, float previousData, float smoothFactor)
+/**************************************************************************/
+/*!
+    @brief  Reads the factory-set coefficients
+*/
+/**************************************************************************/
+void BMP085::readCoefficients(void)
 {
-	if (smoothFactor != 1.0) //only apply time compensated filter if smoothFactor is applied
-	{
-		return (previousData * (1.0 - smoothFactor) + (currentData * smoothFactor));
-	}
-	return currentData; //if smoothFactor == 1.0, do not calculate, just bypass!
+  #if BMP085_USE_DATASHEET_VALS
+    _bmp085_coeffs.ac1 = 408;
+    _bmp085_coeffs.ac2 = -72;
+    _bmp085_coeffs.ac3 = -14383;
+    _bmp085_coeffs.ac4 = 32741;
+    _bmp085_coeffs.ac5 = 32757;
+    _bmp085_coeffs.ac6 = 23153;
+    _bmp085_coeffs.b1  = 6190;
+    _bmp085_coeffs.b2  = 4;
+    _bmp085_coeffs.mb  = -32768;
+    _bmp085_coeffs.mc  = -8711;
+    _bmp085_coeffs.md  = 2868;
+    _bmp085Mode        = 0;
+  #else
+  
+    readS16(BMP085_REGISTER_CAL_AC1, &_bmp085_coeffs.ac1);
+    readS16(BMP085_REGISTER_CAL_AC2, &_bmp085_coeffs.ac2);
+    readS16(BMP085_REGISTER_CAL_AC3, &_bmp085_coeffs.ac3);
+    read16(BMP085_REGISTER_CAL_AC4, &_bmp085_coeffs.ac4);
+    read16(BMP085_REGISTER_CAL_AC5, &_bmp085_coeffs.ac5);
+    read16(BMP085_REGISTER_CAL_AC6, &_bmp085_coeffs.ac6);
+    readS16(BMP085_REGISTER_CAL_B1, &_bmp085_coeffs.b1);
+    readS16(BMP085_REGISTER_CAL_B2, &_bmp085_coeffs.b2);
+    readS16(BMP085_REGISTER_CAL_MB, &_bmp085_coeffs.mb);
+    readS16(BMP085_REGISTER_CAL_MC, &_bmp085_coeffs.mc);
+    readS16(BMP085_REGISTER_CAL_MD, &_bmp085_coeffs.md);
+  #endif
+}
+
+/**************************************************************************/
+/*!
+
+*/
+/**************************************************************************/
+void BMP085::readRawTemperature(int32_t *temperature)
+{
+  #if BMP085_USE_DATASHEET_VALS
+    *temperature = 27898;
+  #else
+    uint16_t t;
+    writeCommand(BMP085_REGISTER_CONTROL, BMP085_REGISTER_READTEMPCMD);
+    delay(5);
+    read16(BMP085_REGISTER_TEMPDATA, &t);
+    *temperature = t;
+  #endif
+}
+
+/**************************************************************************/
+/*!
+
+*/
+/**************************************************************************/
+void BMP085::readRawPressure(int32_t *pressure)
+{
+  #if BMP085_USE_DATASHEET_VALS
+    *pressure = 23843;
+  #else
+    uint8_t  p8;
+    uint16_t p16;
+    int32_t  p32;
+
+    writeCommand(BMP085_REGISTER_CONTROL, BMP085_REGISTER_READPRESSURECMD + (_bmp085Mode << 6));
+    switch(_bmp085Mode)
+    {
+      case BMP085_MODE_ULTRALOWPOWER:
+        delay(5);
+        break;
+      case BMP085_MODE_STANDARD:
+        delay(8);
+        break;
+      case BMP085_MODE_HIGHRES:
+        delay(14);
+        break;
+      case BMP085_MODE_ULTRAHIGHRES:
+      default:
+        delay(26);
+        break;
+    }
+
+    read16(BMP085_REGISTER_PRESSUREDATA, &p16);
+    p32 = (uint32_t)p16 << 8;
+    read8(BMP085_REGISTER_PRESSUREDATA+2, &p8);
+    p32 += p8;
+    p32 >>= (8 - _bmp085Mode);
+    
+    *pressure = p32;
+  #endif
+}
+
+/***************************************************************************
+ PUBLIC FUNCTIONS
+ ***************************************************************************/
+ 
+/**************************************************************************/
+/*!
+    @brief  Setups the HW
+*/
+/**************************************************************************/
+bool BMP085::begin(bmp085_mode_t mode)
+{
+  // Enable I2C
+  Wire.begin();
+
+  /* Mode boundary check */
+  if ((mode > BMP085_MODE_ULTRAHIGHRES) || (mode < 0))
+  {
+    mode = BMP085_MODE_ULTRAHIGHRES;
+  }
+
+  /* Make sure we have the right device */
+  uint8_t id;
+  read8(BMP085_REGISTER_CHIPID, &id);
+  if(id != 0x55)
+  {
+    return false;
+  }
+
+  /* Set the mode indicator */
+  _bmp085Mode = mode;
+
+  /* Coefficients need to be read once */
+  readCoefficients();
+    
+  return true;
+}
+
+/**************************************************************************/
+/*!
+    @brief  Gets the compensated pressure level in kPa
+*/
+/**************************************************************************/
+void BMP085::getPressure(float *pressure)
+{
+  int32_t  ut = 0, up = 0, compp = 0;
+  int32_t  x1, x2, b5, b6, x3, b3, p;
+  uint32_t b4, b7;
+
+  /* Get the raw pressure and temperature values */
+  readRawTemperature(&ut);
+  readRawPressure(&up);
+
+  /* Temperature compensation */
+  x1 = (ut - (int32_t)(_bmp085_coeffs.ac6))*((int32_t)(_bmp085_coeffs.ac5))/pow(2,15);
+  x2 = ((int32_t)(_bmp085_coeffs.mc*pow(2,11)))/(x1+(int32_t)(_bmp085_coeffs.md));
+  b5 = x1 + x2;
+
+  /* Pressure compensation */
+  b6 = b5 - 4000;
+  x1 = (_bmp085_coeffs.b2 * ((b6 * b6) >> 12)) >> 11;
+  x2 = (_bmp085_coeffs.ac2 * b6) >> 11;
+  x3 = x1 + x2;
+  b3 = (((((int32_t) _bmp085_coeffs.ac1) * 4 + x3) << _bmp085Mode) + 2) >> 2;
+  x1 = (_bmp085_coeffs.ac3 * b6) >> 13;
+  x2 = (_bmp085_coeffs.b1 * ((b6 * b6) >> 12)) >> 16;
+  x3 = ((x1 + x2) + 2) >> 2;
+  b4 = (_bmp085_coeffs.ac4 * (uint32_t) (x3 + 32768)) >> 15;
+  b7 = ((uint32_t) (up - b3) * (50000 >> _bmp085Mode));
+
+  if (b7 < 0x80000000)
+  {
+    p = (b7 << 1) / b4;
+  }
+  else
+  {
+    p = (b7 / b4) << 1;
+  }
+
+  x1 = (p >> 8) * (p >> 8);
+  x1 = (x1 * 3038) >> 16;
+  x2 = (-7357 * p) >> 16;
+  compp = p + ((x1 + x2 + 3791) >> 4);
+
+  /* Assign compensated pressure value */
+  *pressure = compp;
+}
+
+/**************************************************************************/
+/*!
+    @brief  Reads the temperatures in degrees Celsius
+*/
+/**************************************************************************/
+void BMP085::getTemperature(float *temp)
+{
+  int32_t UT, X1, X2, B5;     // following ds convention
+  float t;
+
+  readRawTemperature(&UT);
+
+  #if BMP085_USE_DATASHEET_VALS
+    // use datasheet numbers!
+    UT = 27898;
+    _bmp085_coeffs.ac6 = 23153;
+    _bmp085_coeffs.ac5 = 32757;
+    _bmp085_coeffs.mc = -8711;
+    _bmp085_coeffs.md = 2868;
+  #endif
+
+  // step 1
+  X1 = (UT - (int32_t)_bmp085_coeffs.ac6) * ((int32_t)_bmp085_coeffs.ac5) / pow(2,15);
+  X2 = ((int32_t)_bmp085_coeffs.mc * pow(2,11)) / (X1+(int32_t)_bmp085_coeffs.md);
+  B5 = X1 + X2;
+  t = (B5+8)/pow(2,4);
+  t /= 10;
+
+  *temp = t;
+}
+
+/**************************************************************************/
+/*!
+    Calculates the altitude (in meters) from the specified atmospheric
+    pressure (in hPa), sea-level pressure (in hPa), and temperature (in °C)
+
+    @param  seaLevel      Sea-level pressure in hPa
+    @param  atmospheric   Atmospheric pressure in hPa
+    @param  temp          Temperature in degrees Celsius
+*/
+/**************************************************************************/
+float BMP085::pressureToAltitude(float seaLevel, float atmospheric, float temp)
+{
+  /* Hyposometric formula:                      */
+  /*                                            */
+  /*     ((P0/P)^(1/5.257) - 1) * (T + 273.15)  */
+  /* h = -------------------------------------  */
+  /*                   0.0065                   */
+  /*                                            */
+  /* where: h   = height (in meters)            */
+  /*        P0  = sea-level pressure (in hPa)   */
+  /*        P   = atmospheric pressure (in hPa) */
+  /*        T   = temperature (in °C)           */
+
+  return (((float)pow((seaLevel/atmospheric), 0.190223F) - 1.0F)
+         * (temp + 273.15F)) / 0.0065F;
+}
+
+/**************************************************************************/
+/*!
+    @brief  Provides the sensor_t data for this sensor
+*/
+/**************************************************************************/
+void BMP085::getSensor(sensor_t *sensor)
+{
+  /* Clear the sensor_t object */
+  memset(sensor, 0, sizeof(sensor_t));
+
+  /* Insert the sensor name in the fixed length char array */
+  strncpy (sensor->name, "BMP085", sizeof(sensor->name) - 1);
+  sensor->name[sizeof(sensor->name)- 1] = 0;
+  sensor->version     = 1;
+  sensor->sensor_id   = deviceId;
+  sensor->type        = SENSOR_TYPE_PRESSURE;
+  sensor->min_delay   = 0;
+  sensor->max_value   = 300.0F;               // 300..1100 hPa
+  sensor->min_value   = 1100.0F;
+  sensor->resolution  = 0.01F;                // Datasheet states 0.01 hPa resolution
+}
+
+/**************************************************************************/
+/*!
+    @brief  Reads the sensor and returns the data as a sensors_event_t
+*/
+/**************************************************************************/
+void BMP085::getEvent(sensors_event_t *event)
+{
+  float pressure_kPa;
+
+  /* Clear the event */
+  memset(event, 0, sizeof(sensors_event_t));
+
+  event->version   = sizeof(sensors_event_t);
+  event->sensor_id = deviceId;
+  event->type      = SENSOR_TYPE_PRESSURE;
+  event->timestamp = 0;
+  getPressure(&pressure_kPa);
+  event->pressure = pressure_kPa / 100.0F; /* kPa to hPa */
 }
