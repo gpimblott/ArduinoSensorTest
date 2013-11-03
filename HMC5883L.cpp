@@ -29,11 +29,17 @@ bool HMC5883L::begin()
 	Wire.begin();
 
 	/* Make sure we have the right device */
-	uint8_t id;
-	read8(IdenificationRegisterA, &id);
+	uint8_t id1,id2,id3;
+	read8(IdenificationRegisterA, &id1);
+	read8(IdenificationRegisterB, &id2);
+	read8(IdenificationRegisterC, &id3);
 
-	Serial.print("ID:"); Serial.println(id);
+	if( id1!='H' || id2 !='4' || id3!='3') {
+		Serial.print("Wrong chip ID");
+		return false;
+	}
 
+	
 	return true;
 }
 

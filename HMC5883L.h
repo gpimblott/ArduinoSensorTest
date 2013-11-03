@@ -33,6 +33,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #define ConfigurationRegisterA 0x00
 #define ConfigurationRegisterB 0x01
 #define IdenificationRegisterA 0x0A
+#define IdenificationRegisterB 0x0B
+#define IdenificationRegisterC 0x0C
 
 #define ModeRegister 0x02
 #define DataRegisterBegin 0x03

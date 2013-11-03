@@ -44,6 +44,9 @@ L3G4200D gyro;
 BMP085 bmp = BMP085(10085);
 #endif
 
+/********************************************************/
+/* Helper routine to output sensor details
+/********************************************************/
 void displaySensorDetails(sensor_t sensor)
 {
 	Serial.println("------------------------------------");
@@ -59,8 +62,8 @@ void displaySensorDetails(sensor_t sensor)
 }
 
 /**
-* Setup the BMP085 pressure sensor
-**/
+ * Setup the BMP085 pressure sensor
+ **/
 #ifdef PRESSURE
 
 void setupBMP085() {
@@ -78,8 +81,11 @@ void setupBMP085() {
 	displaySensorDetails(sensor);
 }
 
+/*****************************************************************/
+/* Read from the BMP085 pressure sensor
+/*****************************************************************/
 void readBMP085() {
-	Serial.println("Reading BMP085");
+	
 	/* Get a new sensor event */
 	sensors_event_t event;
 	bmp.getEvent(&event);
@@ -206,7 +212,12 @@ boolean setupHMC5883L() {
 	int error = 0;
 	
 	// Start the sensor
-	compass.begin();
+	if(!compass.begin() )
+	{
+		/* There was a problem detecting the BMP085 ... check your connections */
+		Serial.print("Ooops, no HMC883L detected ... Check your wiring or I2C ADDR!");
+		while(1);
+	}
 	
 	// Display the sensor
 	sensor_t sensor;
