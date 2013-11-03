@@ -20,17 +20,18 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
 #include "L3G4200D.h"
 #include "HMC5883L.h"
 #include "ADXL345.h"
+#include "BMP085.h"
 
 
-//#define COMPASS
+#define COMPASS
 //#define GYRO
-#define ACCEL
+//#define ACCEL
+//#define PRESSURE
 
 #ifdef ACCEL
 ADXL345 accel;
 #endif
 
-// Store our compass as a variable.
 #ifdef COMPASS
 HMC5883L compass;
 #endif
@@ -39,63 +40,31 @@ HMC5883L compass;
 L3G4200D gyro;
 #endif
 
-
-/**
-* Setup the various sensors
-**/
-void setup() {
-	Serial.begin(9600);
-	
-	#ifdef GYRO
-	if( setupL3G4200D() ) {
-		Serial.println("L3G4200D Gyro setup ok");
-		} else {
-		Serial.println("L3G4200D Gyro setup FAILED");
-	}
-	#endif
-	
-	#ifdef COMPASS
-	if( setupHMC5883L() ) {
-		Serial.println("HMC5883L Compass setup ok");
-		} else {
-		Serial.println("HMC5883L Compass setup FAILED");
-	}
-	#endif
-	
-	#ifdef ACCEL
-	setupADXL345();
-	#endif
-}
-
+#ifdef PRESSURE
+BMP085 pressure;
+#endif
 
 
 /**
-* Main execution loop
-*
-* Keep reading the sensors and display the output
-*
-**/
-void loop() {
-	
-	#ifdef GYRO
-	// Digital Gyro
-	readL3G4200D();
-	#endif
+ * Setup the BMP085 pressure sensor
+ **/
+#ifdef PRESSURE
 
-	#ifdef COMPASS
-	// Digital Compass
-	readHMC5883L();
-	#endif
-
-	#ifdef ACCEL
-	// Accelerometer
-	readADXL345();
-	#endif
-
-	// Wait for a short time
-	delay(100);
+void setupBMP085() {
+	Serial.println("Initialising BMP085");
+	//pressure.initialise();
 }
 
+void readBMP085() {
+	Serial.println("Reading BMP085");
+	//pressure.measureBaro();
+    
+    Serial.print("altitude : ");
+    //Serial.print(pressure.getBaroAltitude());
+    Serial.println();
+}
+
+#endif
 
 #ifdef ACCEL
 /**
@@ -242,3 +211,67 @@ void readHMC5883L() {
 }
 
 #endif
+
+/**
+* Setup the various sensors
+**/
+void setup() {
+	Serial.begin(9600);
+	
+	#ifdef GYRO
+	if( setupL3G4200D() ) {
+		Serial.println("L3G4200D Gyro setup ok");
+		} else {
+		Serial.println("L3G4200D Gyro setup FAILED");
+	}
+	#endif
+	
+	#ifdef COMPASS
+	if( setupHMC5883L() ) {
+		Serial.println("HMC5883L Compass setup ok");
+		} else {
+		Serial.println("HMC5883L Compass setup FAILED");
+	}
+	#endif
+	
+	#ifdef ACCEL
+	setupADXL345();
+	#endif
+	
+	#ifdef PRESSURE
+	setupBMP085();
+	#endif
+}
+
+
+
+/**
+* Main execution loop
+*
+* Keep reading the sensors and display the output
+*
+**/
+void loop() {
+	
+	#ifdef GYRO
+	// Digital Gyro
+	readL3G4200D();
+	#endif
+
+	#ifdef COMPASS
+	// Digital Compass
+	readHMC5883L();
+	#endif
+
+	#ifdef ACCEL
+	// Accelerometer
+	readADXL345();
+	#endif
+	
+	#ifdef PRESSURE
+	readBMP085();
+	#endif
+
+	// Wait for a short time
+	delay(100);
+}

@@ -234,6 +234,12 @@
     <Compile Include="ADXL345.h">
       <SubType>compile</SubType>
     </Compile>
+    <Compile Include="BMP085.h">
+      <SubType>compile</SubType>
+    </Compile>
+    <Compile Include="BMP085.cpp">
+      <SubType>compile</SubType>
+    </Compile>
     <Compile Include="HMC5883L.cpp">
       <SubType>compile</SubType>
     </Compile>

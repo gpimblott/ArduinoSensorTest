@@ -4,16 +4,17 @@
  * Created: 01/11/2013 21:50:50
  *  Author: gordon
  */ 
-
+#include <Wire.h>
 #include "SensorUtils.h"
 
-void writeI2C(int id , int address, int data)
+void updateI2C(int deviceAddress , int dataAddress, byte data)
 {
-	Wire.beginTransmission(id);
-	Wire.write(address);
+	Wire.beginTransmission(deviceAddress);
+	Wire.write(dataAddress);
 	Wire.write(data);
 	Wire.endTransmission();
 }
+
 
 void writeI2C(int address, byte data) {
 
@@ -37,4 +38,23 @@ byte readWhoI2C(int deviceAddress) {
 	delay(100);
 	Wire.requestFrom(deviceAddress, 1);
 	return Wire.read();
+}
+
+int readShortI2C() {
+
+	return (signed short)readWordI2C();
+}
+
+int readWordI2C() {
+	return (Wire.read() << 8) | Wire.read();
+}
+
+int readWordAndWaitI2C(int deviceAddress) {
+
+	Wire.requestFrom(deviceAddress, 2); // request two bytes
+	while(!Wire.available()); // wait until data available
+	unsigned char msb = Wire.read();
+	while(!Wire.available()); // wait until data available
+	unsigned char lsb = Wire.read();
+	return (((int)msb<<8) | ((int)lsb));
 }
